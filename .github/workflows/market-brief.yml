@@ -1,0 +1,43 @@
+name: Morning market brief
+
+on:
+  schedule:
+    # GitHub Actions の cron は UTC。米国市場の引け（日本時間 5〜6 時）後に実行する。
+    - cron: "15 21 * * *"   # 毎日 06:15 JST
+    - cron: "30 22 * * *"   # 毎日 07:30 JST（遅れて公表されるデータを拾うための再取得）
+  workflow_dispatch: {}     # Actions 画面から手動実行も可能
+
+permissions:
+  contents: write
+
+concurrency:
+  group: market-brief
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch market data
+        env:
+          ESTAT_APP_ID: ${{ secrets.ESTAT_APP_ID }}   # 任意。未設定なら日本CPIはスキップ
+        run: python market/fetch_data.py
+
+      - name: Commit updated data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add market/data.json
+          if git diff --cached --quiet; then
+            echo "No changes"
+            exit 0
+          fi
+          git commit -m "market: update data ($(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M') JST)"
+          git push
